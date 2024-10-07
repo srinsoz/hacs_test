@@ -1,0 +1,10 @@
+{
+    "domain":"yocto_led",
+    "name":"Yoctpuce led test",
+    "codeowners": ["@srinsoz"],
+    "requirements": ["yoctopuce==2.0.62733"],
+    "iot_class":"assumed_state",
+    "issue_tracker": "https://github.com/srinsoz/hacs_test/issues",
+    "documentation": "https://github.com/srinsoz/hacs_test",
+    "version":"1.0.0"
+}
