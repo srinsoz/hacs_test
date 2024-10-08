@@ -13,16 +13,16 @@ from homeassistant.components.light import (
     SUPPORT_BRIGHTNESS,
     LightEntity,
 )
-from homeassistant.const import CONF_URL, CONF_NAME
+from homeassistant.const import CONF_NAME, CONF_URL
 from homeassistant.core import HomeAssistant
 
 # Import the device class from the component that you want to support
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
-from yoctopuce.yocto_api import *
-from yoctopuce.yocto_colorledcluster import *
 
+from .yocto_api import *
+from .yocto_colorledcluster import *
 
 _LOGGER = logging.getLogger("yocto_led")
 
@@ -35,7 +35,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 )
 
 
-def setup_platform(
+async def async_setup_platform(
     hass: HomeAssistant,
     config: ConfigType,
     add_entities: AddEntitiesCallback,
@@ -44,11 +44,11 @@ def setup_platform(
     """Set up the Godox Light platform."""
     # Add devices
     _LOGGER.info(pformat(config))
-    _LOGGER.info("Use Yoctolib version %s" % YAPI.GetAPIVersion())
 
     light = {"name": config[CONF_NAME], "url": config[CONF_URL]}
-
-    add_entities([YoctoColorLedLight(light)])
+    yl = YoctoColorLedLight(light)
+    await yl.async_setupYLib(hass)
+    add_entities([yl])
 
 
 class YoctoColorLedLight(LightEntity):
@@ -57,12 +57,7 @@ class YoctoColorLedLight(LightEntity):
     def __init__(self, light) -> None:
         """Initialize an GodoxLight."""
         _LOGGER.info(pformat(light))
-        errmsg = YRefParam()
-        _LOGGER.debug("Register hub %s", light["url"])
-        if YAPI.RegisterHub(light["url"], errmsg) != YAPI.SUCCESS:
-            _LOGGER.error("RegisterHub error" + errmsg.value)
-
-        self._leds = YColorLedCluster.FirstColorLedCluster()
+        self._url = light["url"]
         self._name = light["name"]
         self._state = None
         self._brightness = None
@@ -91,6 +86,18 @@ class YoctoColorLedLight(LightEntity):
         """Return true if light is on."""
         return self._state
 
+    async def async_setupYLib(self, hass: HomeAssistant) -> None:
+        await hass.async_add_executor_job(self.setupYLib)
+
+    def setupYLib(self) -> None:
+        _LOGGER.info("Use Yoctolib version %s" % YAPI.GetAPIVersion())
+        errmsg = YRefParam()
+        _LOGGER.debug("Register hub %s", self._url)
+        if YAPI.RegisterHub(self._url, errmsg) != YAPI.SUCCESS:
+            _LOGGER.error("RegisterHub error" + errmsg.value)
+            return
+        self._leds = YColorLedCluster.FirstColorLedCluster()
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Instruct the light to turn on."""
         # if ATTR_BRIGHTNESS in kwargs:
@@ -113,5 +120,5 @@ class YoctoColorLedLight(LightEntity):
 
         This is the only method that should fetch new data for Home Assistant.
         """
-        self._state = self._leds.is_on
-        self._brightness = self._leds.brightness
+        self._state = False  # self._leds.is_on
+        self._brightness = 0  # self._leds.brightness
