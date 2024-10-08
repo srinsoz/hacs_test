@@ -9,8 +9,10 @@ import voluptuous as vol
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
+    ATTR_HS_COLOR,
+    ATTR_RGB_COLOR,
     PLATFORM_SCHEMA,
-    SUPPORT_BRIGHTNESS,
+    ColorMode,
     LightEntity,
 )
 from homeassistant.const import CONF_NAME, CONF_URL
@@ -52,16 +54,18 @@ async def async_setup_platform(
 
 
 class YoctoColorLedLight(LightEntity):
-    """Representation of an Godox Light."""
+    """Representation of an Yocto-Color-V2 Light."""
 
     def __init__(self, light) -> None:
-        """Initialize an GodoxLight."""
         _LOGGER.info(pformat(light))
         self._url = light["url"]
         self._name = light["name"]
-        self._state = None
-        self._brightness = None
         self._nb_leds = 2
+        self._is_on = False
+        self._color_mode = ColorMode.RGB
+        self._rgb_color = (255, 255, 255)
+        self._hs_color = (255, 255)
+        self._brightness = 0
 
     @property
     def name(self) -> str:
@@ -69,25 +73,33 @@ class YoctoColorLedLight(LightEntity):
         return self._name
 
     @property
-    def brightness(self):
-        """Return the brightness of the light.
+    def is_on(self) -> bool | None:
+        """Return true if light is on."""
+        return self._is_on
 
-        This method is optional. Removing it indicates to Home Assistant
-        that brightness is not supported for this light.
-        """
+    @property
+    def color_mode(self):
+        return self._color_mode
+
+    @property
+    def rgb_color(self):
+        return self._rgb_color
+
+    @property
+    def brightness(self):
         return self._brightness
 
     @property
-    def supported_features(self):
-        return SUPPORT_BRIGHTNESS
+    def hs_color(self):
+        return self._hs_color
 
     @property
-    def is_on(self) -> bool | None:
-        """Return true if light is on."""
-        return self._state
+    def supported_color_modes(self):
+        return [ColorMode.RGB]
 
-    async def async_setupYLib(self, hass: HomeAssistant) -> None:
-        await hass.async_add_executor_job(self.setupYLib)
+    @property
+    def is_on(self):
+        return self._is_on
 
     def setupYLib(self) -> None:
         _LOGGER.info("Use Yoctolib version %s" % YAPI.GetAPIVersion())
@@ -97,28 +109,65 @@ class YoctoColorLedLight(LightEntity):
             _LOGGER.error("RegisterHub error" + errmsg.value)
             return
         self._leds = YColorLedCluster.FirstColorLedCluster()
+        self.update_state()
+
+    def set_on_off(self) -> None:
+        if self._leds is not None and self._leds.isOnline():
+            if self._is_on:
+                if self._color_mode == ColorMode.RGB:
+                    _LOGGER.debug(self._rgb_color)
+                    color = (
+                        (self._rgb_color[0] << 16)
+                        + (self._rgb_color[1] << 8)
+                        + self._rgb_color[2]
+                    )
+                    _LOGGER.debug("computed color is 0x%x" % color)
+                    self._leds.rgb_move(0, self._nb_leds, color, 1000)
+                else:
+                    _LOGGER.debug(self._hs_color)
+                    hsl_color = (
+                        (int(self._hs_color[0] * 255) << 16)
+                        + (int(self._hs_color[1] * 255) << 8)
+                        + self._brightness
+                    )
+                    _LOGGER.debug("computed hsl color is 0x%x" % hsl_color)
+                    self._leds.hsl_move(0, self._nb_leds, hsl_color, 1000)
+            else:
+                self._leds.hsl_move(0, self._nb_leds, 0, 1000)
+        else:
+            _LOGGER.warning("Module not connected (check identification and USB cable)")
+
+    def update_state(self) -> None:
+        _LOGGER.info("update led status")
+        if self._leds is not None and self._leds.isOnline():
+            leds = self._leds.get_rgbColorArray(0, 1)
+            if leds[0] != 0:
+                self._is_on = True
+            r = leds[0] >> 16
+            g = (leds[0] >> 8) & 0xFF
+            b = leds[0] & 0xFF
+            self._rgb_color = (r, g, b)
+            _LOGGER.info("update led status %x  to (%x %x %x)" % (leds[0], r, g, b))
+        else:
+            _LOGGER.warning("Module not connected (check identification and USB cable)")
+
+    async def async_setupYLib(self, hass: HomeAssistant) -> None:
+        await hass.async_add_executor_job(self.setupYLib)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Instruct the light to turn on."""
-        # if ATTR_BRIGHTNESS in kwargs:
-        #    await self._leds.set_brightness(kwargs.get(ATTR_BRIGHTNESS, 255))
-        if self._leds is not None and self._leds.isOnline():
-            self._leds.rgb_move(0, self._nb_leds, 0xFFFFFF, 1000)
-        else:
-            _LOGGER.debug("Module not connected (check identification and USB cable)")
+        self._is_on = True
+        # Vérifier si un mode de couleur a été spécifié
+        if ATTR_RGB_COLOR in kwargs:
+            self._rgb_color = kwargs[ATTR_RGB_COLOR]
+        if ATTR_HS_COLOR in kwargs:
+            self._hs_color = kwargs[ATTR_HS_COLOR]
+        if ATTR_BRIGHTNESS in kwargs:
+            self._brightness = kwargs[ATTR_BRIGHTNESS]
+        await self.hass.async_add_executor_job(self.set_on_off)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Instruct the light to turn off."""
-        # await self._leds.turn_off()
-        if self._leds is not None and self._leds.isOnline():
-            self._leds.rgb_move(0, self._nb_leds, 0, 1000)
-        else:
-            _LOGGER.debug("Module not connected (check identification and USB cable)")
+        self._is_on = False
+        await self.hass.async_add_executor_job(self.set_on_off)
 
-    def update(self) -> None:
-        """Fetch new state data for this light.
-
-        This is the only method that should fetch new data for Home Assistant.
-        """
-        self._state = False  # self._leds.is_on
-        self._brightness = 0  # self._leds.brightness
+    # async def async_update(self) -> None:
+    # await self.hass.async_add_executor_job(self.update_state)
