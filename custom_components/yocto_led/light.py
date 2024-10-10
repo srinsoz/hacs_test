@@ -23,10 +23,13 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
+from . import HubConfigEntry
+from .const import DOMAIN
 from .yocto_api import *
 from .yocto_colorledcluster import *
 
-_LOGGER = logging.getLogger("yocto_led")
+_LOGGER = logging.getLogger(__name__)
+
 
 # Validation of the user's configuration
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
@@ -35,6 +38,23 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Required(CONF_URL): cv.string,
     }
 )
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    config_entry: HubConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up Yoctopuce Color LEDs from a config entry."""
+    hub = config_entry.runtime_data
+    _LOGGER.info("setup entity")
+
+    light = {"name": "test_blop", "url": hub._url}
+    yl = YoctoColorLedLight(light)
+    await yl.async_setupYLib(hass)
+    async_add_entities([yl])
+
+    return True
 
 
 async def async_setup_platform(
@@ -105,7 +125,11 @@ class YoctoColorLedLight(LightEntity):
         _LOGGER.info("Use Yoctolib version %s" % YAPI.GetAPIVersion())
         errmsg = YRefParam()
         _LOGGER.debug("Register hub %s", self._url)
-        if YAPI.RegisterHub(self._url, errmsg) != YAPI.SUCCESS:
+
+        res = YAPI.RegisterHub(self._url, errmsg)
+        if res == YAPI.DOUBLE_ACCES:
+            _LOGGER.warning("RegisterHub warning :" + errmsg.value)
+        elif res != YAPI.SUCCESS:
             _LOGGER.error("RegisterHub error" + errmsg.value)
             return
         self._leds = YColorLedCluster.FirstColorLedCluster()
