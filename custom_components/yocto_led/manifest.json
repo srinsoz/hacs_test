@@ -1,6 +1,6 @@
 {
     "domain":"yocto_led",
-    "name":"Yoctpuce led test",
+    "name":"ColorLedCluster",
     "codeowners": [
       "@srinsoz"
     ],
