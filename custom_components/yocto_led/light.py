@@ -24,9 +24,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from . import HubConfigEntry
+from .hub import Hub
 from .const import DOMAIN
-from .yocto_api import *
-from .yocto_colorledcluster import *
+from yoctopuce.yocto_api import *
+from yoctopuce.yocto_colorledcluster import *
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,12 +48,12 @@ async def async_setup_entry(
 ) -> None:
     """Set up Yoctopuce Color LEDs from a config entry."""
     hub = config_entry.runtime_data
-    _LOGGER.info("setup entity")
 
-    light = {"name": "test_blop", "url": hub._url}
-    yl = YoctoColorLedLight(light)
-    await yl.async_setupYLib(hass)
-    async_add_entities([yl])
+    new_devices = []
+    for hwid in hub.leds:
+        new_devices.append(YoctoColorLedLight(hub, hwid))
+    if new_devices:
+        async_add_entities(new_devices)
 
     return True
 
@@ -76,15 +77,13 @@ async def async_setup_platform(
 class YoctoColorLedLight(LightEntity):
     """Representation of an Yocto-Color-V2 Light."""
 
-    def __init__(self, light) -> None:
-        _LOGGER.info(pformat(light))
-        self._url = light["url"]
-        self._name = light["name"]
-        self._nb_leds = 2
+    def __init__(self, hub: Hub, hwid: str) -> None:
+        self._hub = hub
+        self._name = hwid
         self._is_on = False
         self._color_mode = ColorMode.RGB
         self._rgb_color = (255, 255, 255)
-        self._hs_color = (255, 255)
+        # self._hs_color = (255, 255)
         self._brightness = 0
 
     @property
@@ -121,47 +120,21 @@ class YoctoColorLedLight(LightEntity):
     def is_on(self):
         return self._is_on
 
-    def setupYLib(self) -> None:
-        _LOGGER.info("Use Yoctolib version %s" % YAPI.GetAPIVersion())
-        errmsg = YRefParam()
-        _LOGGER.debug("Register hub %s", self._url)
-
-        res = YAPI.RegisterHub(self._url, errmsg)
-        if res == YAPI.DOUBLE_ACCES:
-            _LOGGER.warning("RegisterHub warning :" + errmsg.value)
-        elif res != YAPI.SUCCESS:
-            _LOGGER.error("RegisterHub error" + errmsg.value)
-            return
-        self._leds = YColorLedCluster.FirstColorLedCluster()
-        self.update_state()
-
     def set_on_off(self) -> None:
-        if self._leds is not None and self._leds.isOnline():
-            if self._is_on:
-                if self._color_mode == ColorMode.RGB:
-                    _LOGGER.debug(self._rgb_color)
-                    color = (
-                        (self._rgb_color[0] << 16)
-                        + (self._rgb_color[1] << 8)
-                        + self._rgb_color[2]
-                    )
-                    _LOGGER.debug("computed color is 0x%x" % color)
-                    self._leds.rgb_move(0, self._nb_leds, color, 1000)
-                else:
-                    _LOGGER.debug(self._hs_color)
-                    hsl_color = (
-                        (int(self._hs_color[0] * 255) << 16)
-                        + (int(self._hs_color[1] * 255) << 8)
-                        + self._brightness
-                    )
-                    _LOGGER.debug("computed hsl color is 0x%x" % hsl_color)
-                    self._leds.hsl_move(0, self._nb_leds, hsl_color, 1000)
-            else:
-                self._leds.hsl_move(0, self._nb_leds, 0, 1000)
+        if self._is_on:
+            _LOGGER.debug(self._rgb_color)
+            color = (
+                (self._rgb_color[0] << 16)
+                + (self._rgb_color[1] << 8)
+                + self._rgb_color[2]
+            )
+            self._hub.set_color(self._name, color)
+            self._is_on = True
         else:
-            _LOGGER.warning("Module not connected (check identification and USB cable)")
+            self._hub.set_color(self._name, 0)
+            self._is_on = False
 
-    def update_state(self) -> None:
+    def update_state_dbg(self) -> None:
         _LOGGER.info("update led status")
         if self._leds is not None and self._leds.isOnline():
             leds = self._leds.get_rgbColorArray(0, 1)
@@ -174,9 +147,6 @@ class YoctoColorLedLight(LightEntity):
             _LOGGER.info("update led status %x  to (%x %x %x)" % (leds[0], r, g, b))
         else:
             _LOGGER.warning("Module not connected (check identification and USB cable)")
-
-    async def async_setupYLib(self, hass: HomeAssistant) -> None:
-        await hass.async_add_executor_job(self.setupYLib)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         self._is_on = True

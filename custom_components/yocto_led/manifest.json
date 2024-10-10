@@ -1,17 +1,17 @@
 {
-  "domain":"yocto_led",
-  "name":"Yoctpuce led test",
-  "codeowners": [
-    "@srinsoz"
-  ],
-  "config_flow": true,
-  "dependencies": [],
-  "issue_tracker": "https://github.com/srinsoz/hacs_test/issues",
-  "documentation": "https://github.com/srinsoz/hacs_test",
-  "homekit": {},
-  "iot_class": "local_polling",
-  "requirements": [],
-  "version":"1.0.3",
-  "ssdp": [],
-  "zeroconf": []
+    "domain":"yocto_led",
+    "name":"Yoctpuce led test",
+    "codeowners": [
+      "@srinsoz"
+    ],
+    "config_flow": true,
+    "dependencies": [],
+    "issue_tracker": "https://github.com/srinsoz/hacs_test/issues",
+    "documentation": "https://github.com/srinsoz/hacs_test",
+    "homekit": {},
+    "iot_class": "local_polling",
+    "requirements": ["yoctopuce==2.0.62875"],
+    "version":"1.0.4",
+    "ssdp": [],
+    "zeroconf": []
 }

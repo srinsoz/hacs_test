@@ -13,8 +13,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
-from .yocto_api import YAPI, YRefParam
-from .yocto_colorledcluster import YColorLedCluster
+from yoctopuce.yocto_api import YAPI, YRefParam
+from yoctopuce.yocto_colorledcluster import YColorLedCluster
+from yoctopuce.yocto_network import YNetwork
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,7 +47,9 @@ def validate_config(url: str) -> dict:
         _LOGGER.debug("- %s", hwid)
         leds.append(hwid)
         l = l.nextColorLedCluster()
-    return {"leds": leds}
+    # fixme handle multiples hub and usb
+    ynet = YNetwork.FirstNetwork()
+    return {"leds": leds, "hub": ynet.get_logicalName()}
 
 
 class ConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -67,9 +70,7 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
                 if "error" in res:
                     errors["base"] = res["error"]
                 elif len(res["leds"]) > 0:
-                    return self.async_create_entry(
-                        title=res["leds"][0], data=user_input
-                    )
+                    return self.async_create_entry(title=res["hub"], data=user_input)
                 else:
                     errors["base"] = "No ColorLed found on " + user_input[CONF_URL]
             except Exception:

@@ -18,10 +18,11 @@ type HubConfigEntry = ConfigEntry[Hub]
 async def async_setup_entry(hass: HomeAssistant, entry: HubConfigEntry) -> bool:
     """Set up Yoctopuce Color LEDs from a config entry."""
 
-    entry.runtime_data = Hub(hass, entry.data["url"])
-
+    hub = Hub(hass, entry.data["url"])
+    if not await hub.test_connection():
+        return False
+    entry.runtime_data = hub
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
     return True
 
 
